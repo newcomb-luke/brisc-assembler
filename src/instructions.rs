@@ -5,6 +5,16 @@ pub enum OperandType {
     Label,
 }
 
+impl OperandType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Register => "register",
+            Self::Integer => "integer",
+            Self::Label => "label",
+        }
+    }
+}
+
 pub mod rules {
     use super::OperandType;
 
@@ -20,7 +30,13 @@ pub mod rules {
     pub static SL_RULES: &[&[OperandType]] = &[&[OperandType::Register], &[OperandType::Register]];
     pub static IN_RULES: &[&[OperandType]] = &[&[OperandType::Register], &[OperandType::Integer]];
     pub static OUT_RULES: &[&[OperandType]] = &[&[OperandType::Register], &[OperandType::Integer]];
-    pub static JZ_RULES: &[&[OperandType]] = &[&[OperandType::Register], &[OperandType::Integer, OperandType::Label]];
-    pub static JLT_RULES: &[&[OperandType]] = &[&[OperandType::Register], &[OperandType::Integer, OperandType::Label]];
+    pub static JZ_RULES: &[&[OperandType]] = &[
+        &[OperandType::Register],
+        &[OperandType::Integer, OperandType::Label],
+    ];
+    pub static JLT_RULES: &[&[OperandType]] = &[
+        &[OperandType::Register],
+        &[OperandType::Integer, OperandType::Label],
+    ];
     pub static J_RULES: &[&[OperandType]] = &[&[OperandType::Integer, OperandType::Label]];
 }
