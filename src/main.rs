@@ -4,12 +4,11 @@ use std::{
     path::PathBuf,
 };
 
-use ast::LabelId;
 use clap::Parser as ClapParser;
 
 use errors::{generator_error_into_diagnostic, parse_error_into_diagnostic, TerminalEmitter};
-use generator::Generator;
-use lexer::{Lexer, Span};
+use generator::{Generator, INSTRUCTION_MEMORY_SIZE_BYTES};
+use lexer::Lexer;
 use parser::Parser;
 use sources::SourceManager;
 
@@ -23,64 +22,6 @@ mod lexer;
 mod parser;
 mod sources;
 
-pub struct LabelManager {
-    map: Vec<(String, Option<i8>, Option<Span>)>,
-}
-
-impl LabelManager {
-    pub fn new() -> Self {
-        Self { map: Vec::new() }
-    }
-
-    pub fn get_id_of(&self, label: &str) -> Option<LabelId> {
-        self.map.iter().position(|l| l.0 == label)
-    }
-
-    pub fn insert_unique(&mut self, label: &str, label_span: Span) -> Result<LabelId, ()> {
-        let exists = self.map.iter().any(|l| l.0 == label);
-
-        if exists {
-            Err(())
-        } else {
-            self.map.push((String::from(label), None, Some(label_span)));
-            Ok(self.map.len() - 1)
-        }
-    }
-
-    pub fn get_or_insert_reference(&mut self, label: &str) -> LabelId {
-        let exists = self.map.iter().any(|l| l.0 == label);
-
-        if exists {
-            self.get_id_of(label).unwrap()
-        } else {
-            self.map.push((String::from(label), None, None));
-            self.map.len() - 1
-        }
-    }
-
-    /// Sets the value of a label (the byte index that it refers to)
-    ///
-    /// Returns Err(()) when the label specified does not exist
-    pub fn set_value_of(&mut self, id: LabelId, value: i8) -> Result<(), ()> {
-        self.map.get_mut(id).map(|l| l.1 = Some(value)).ok_or(())
-    }
-
-    /// Sets the span of a label (the place where it is defined in the source)
-    ///
-    /// Returns Err(()) when the label specified does not exist
-    pub fn set_span_of(&mut self, id: LabelId, span: Span) -> Result<(), ()> {
-        self.map.get_mut(id).map(|l| l.2 = Some(span)).ok_or(())
-    }
-
-    pub fn get_value_of(&self, id: LabelId) -> Option<i8> {
-        self.map.get(id).map(|l| l.1).flatten()
-    }
-
-    pub fn get_span_of(&self, id: LabelId) -> Option<Span> {
-        self.map.get(id).map(|l| l.2).flatten()
-    }
-}
-
 #[derive(ClapParser, Debug)]
 #[command(author, version, about)]
 struct Args {
@@ -93,6 +34,9 @@ struct Args {
         help = "Output binary file path. Default is input file with .bin extension"
     )]
     output_path: Option<String>,
+
+    #[arg(long, short, help = "Helpful for debugging the assembler itself")]
+    debug: bool
 }
 
 fn main() {
@@ -159,23 +103,14 @@ fn main() {
         }
     };
 
-    let null_bytes = 64 - output.len();
+    let num_null_bytes = INSTRUCTION_MEMORY_SIZE_BYTES as usize - output.len();
 
-    for _ in 0..null_bytes {
+    for _ in 0..num_null_bytes {
         output.push(0);
     }
 
-    let mut col = 1;
-
-    for b in output.iter() {
-        print!("{b:02x} ");
-
-        if col == 8 {
-            println!();
-            col = 0;
-        }
-
-        col += 1;
+    if args.debug {
+        debug_print_output(&output);
     }
 
     let output_path = args.output_path.unwrap_or_else(|| {
@@ -193,5 +128,20 @@ fn main() {
         Err(e) => {
             eprintln!("File write error: {e}");
         }
+    }
+}
+
+fn debug_print_output(output: &Vec<u8>) {
+    let mut col = 1;
+
+    for b in output.iter() {
+        print!("{b:02x} ");
+
+        if col == 8 {
+            println!();
+            col = 0;
+        }
+
+        col += 1;
     }
 }

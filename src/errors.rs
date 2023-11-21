@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{generator::GeneratorError, lexer::Span, parser::ParseError, sources::SourceManager};
+use crate::{generator::{GeneratorError, MAX_NUM_INSTRUCTIONS}, lexer::Span, parser::ParseError, sources::SourceManager};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Diagnostic {
@@ -201,12 +201,13 @@ pub(crate) fn generator_error_into_diagnostic(
         }
         GeneratorError::JumpDestinationRangeError(span) => {
             let text = source_manager.get_span(span).unwrap();
-            let label = format!("Jump destination must be in the range of 0-15, found `{text}`");
+            let max_destination = MAX_NUM_INSTRUCTIONS - 1;
+            let label = format!("Jump destination must be in the range of 0-{max_destination}, found `{text}`");
 
             Diagnostic::error_with_span(label, span)
         }
         GeneratorError::MaximumInstructionsError => {
-            let label = String::from("Maximum number of instructions reached (16)");
+            let label = format!("Maximum number of instructions reached ({MAX_NUM_INSTRUCTIONS})");
 
             Diagnostic::error(label)
         }

@@ -1,11 +1,10 @@
 use std::{collections::HashMap, iter::Peekable, slice::Iter};
 
 use crate::{
-    ast::{Instruction, Item, Opcode, Operand, Register},
+    ast::{Instruction, Item, Opcode, Operand, Register, LabelId},
     instructions::{rules::*, OperandType},
-    lexer::{Token, TokenType},
+    lexer::{Token, TokenType, Span},
     sources::SourceManager,
-    LabelManager,
 };
 
 pub enum ParseError {
@@ -116,6 +115,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
 
             if should_parse_instruction {
                 items.push(Item::Instruction(self.parse_instruction()?));
+                self.just_saw_label = false;
             }
 
             self.consume_or_eof(TokenType::Newline)?;
@@ -194,13 +194,12 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 let text = self
                     .source_manager
                     .get_span(next_token.span)
-                    .unwrap()
-                    .to_lowercase();
+                    .unwrap();
 
                 if next_token.tt == TokenType::Identifier {
                     if operand_rule.contains(&OperandType::Register) {
                         // See if it is is a register
-                        if let Ok(register) = Register::try_from(text.as_str()) {
+                        if let Ok(register) = Register::try_from(text.to_lowercase().as_str()) {
                             return Ok(Operand::Register {
                                 value: register,
                                 span: next_token.span,
@@ -210,7 +209,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
 
                     if operand_rule.contains(&OperandType::Label) {
                         // It's a label, we can't do much about checking it's validity until later
-                        let label_id = self.label_manager.get_or_insert_reference(text.as_str());
+                        let label_id = self.label_manager.get_or_insert_reference(text);
 
                         Ok(Operand::Label {
                             value: label_id,
@@ -284,5 +283,63 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         } else {
             Err(ParseError::MissingToken(tt))
         }
+    }
+}
+
+pub struct LabelManager {
+    map: Vec<(String, Option<i8>, Option<Span>)>,
+}
+
+impl LabelManager {
+    pub fn new() -> Self {
+        Self { map: Vec::new() }
+    }
+
+    pub fn get_id_of(&self, label: &str) -> Option<LabelId> {
+        self.map.iter().position(|l| l.0 == label)
+    }
+
+    pub fn insert_unique(&mut self, label: &str, label_span: Span) -> Result<LabelId, ()> {
+        let exists = self.map.iter().any(|l| l.0 == label);
+
+        if exists {
+            Err(())
+        } else {
+            self.map.push((String::from(label), None, Some(label_span)));
+            Ok(self.map.len() - 1)
+        }
+    }
+
+    pub fn get_or_insert_reference(&mut self, label: &str) -> LabelId {
+        let exists = self.map.iter().any(|l| l.0 == label);
+
+        if exists {
+            self.get_id_of(label).unwrap()
+        } else {
+            self.map.push((String::from(label), None, None));
+            self.map.len() - 1
+        }
+    }
+
+    /// Sets the value of a label (the byte index that it refers to)
+    ///
+    /// Returns Err(()) when the label specified does not exist
+    pub fn set_value_of(&mut self, id: LabelId, value: i8) -> Result<(), ()> {
+        self.map.get_mut(id).map(|l| l.1 = Some(value)).ok_or(())
+    }
+
+    /// Sets the span of a label (the place where it is defined in the source)
+    ///
+    /// Returns Err(()) when the label specified does not exist
+    pub fn set_span_of(&mut self, id: LabelId, span: Span) -> Result<(), ()> {
+        self.map.get_mut(id).map(|l| l.2 = Some(span)).ok_or(())
+    }
+
+    pub fn get_value_of(&self, id: LabelId) -> Option<i8> {
+        self.map.get(id).map(|l| l.1).flatten()
+    }
+
+    pub fn get_span_of(&self, id: LabelId) -> Option<Span> {
+        self.map.get(id).map(|l| l.2).flatten()
     }
 }

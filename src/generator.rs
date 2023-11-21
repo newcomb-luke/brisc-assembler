@@ -1,8 +1,11 @@
 use crate::{
     ast::{Instruction, Item, Opcode, Operand, Register},
-    lexer::Span,
-    LabelManager,
+    lexer::Span, parser::LabelManager,
 };
+
+pub(crate) const INSTRUCTION_MEMORY_SIZE_BYTES: i8 = 64;
+const INSTRUCTION_SIZE_BYTES: i8 = 2;
+pub(crate) const MAX_NUM_INSTRUCTIONS: i8 = INSTRUCTION_MEMORY_SIZE_BYTES / INSTRUCTION_SIZE_BYTES;
 
 #[derive(Debug, Clone)]
 pub(crate) enum GeneratorError {
@@ -44,7 +47,7 @@ impl Generator {
                     ended_on_label = None;
                     instr_counter += 1;
 
-                    if instr_counter > 15 {
+                    if instr_counter > MAX_NUM_INSTRUCTIONS {
                         return Err(GeneratorError::MaximumInstructionsError);
                     }
                 }
@@ -175,7 +178,7 @@ impl Generator {
                                             }
                                         }
                                         Operand::Integer { value, span } => {
-                                            if value < 16 {
+                                            if value < MAX_NUM_INSTRUCTIONS {
                                                 Self::generate_immediate(
                                                     &mut output,
                                                     *opcode,
