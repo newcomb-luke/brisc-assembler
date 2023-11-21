@@ -29,7 +29,7 @@ impl Generator {
     pub fn generate(&mut self) -> Result<Vec<u8>, GeneratorError> {
         let mut output = Vec::new();
 
-        let mut byte_counter = 0;
+        let mut instr_counter = 0;
         let mut ended_on_label = None;
 
         for item in self.items.iter() {
@@ -37,14 +37,14 @@ impl Generator {
                 Item::Label(label_id) => {
                     ended_on_label = Some(label_id);
                     self.label_manager
-                        .set_value_of(label_id, byte_counter as i8)
+                        .set_value_of(label_id, instr_counter as i8)
                         .unwrap();
                 }
-                Item::Instruction(instr) => {
+                Item::Instruction(_) => {
                     ended_on_label = None;
-                    byte_counter += instr.opcode().instruction_len();
+                    instr_counter += 1;
 
-                    if byte_counter > 63 {
+                    if instr_counter > 15 {
                         return Err(GeneratorError::MaximumInstructionsError);
                     }
                 }
@@ -175,7 +175,7 @@ impl Generator {
                                             }
                                         }
                                         Operand::Integer { value, span } => {
-                                            if value < 64 {
+                                            if value < 16 {
                                                 Self::generate_immediate(
                                                     &mut output,
                                                     *opcode,

@@ -110,10 +110,6 @@ impl Opcode {
             Self::J => 15,
         }
     }
-
-    pub fn instruction_len(self) -> usize {
-        2
-    }
 }
 
 impl TryFrom<&str> for Opcode {
@@ -161,6 +157,7 @@ pub(crate) enum Instruction {
 }
 
 impl Instruction {
+    #[allow(dead_code)]
     pub fn opcode(&self) -> Opcode {
         match self {
             Self::NoOperand(op) => *op,

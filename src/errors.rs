@@ -201,7 +201,7 @@ pub(crate) fn generator_error_into_diagnostic(
         }
         GeneratorError::JumpDestinationRangeError(span) => {
             let text = source_manager.get_span(span).unwrap();
-            let label = format!("Jump destination must be in the range of 0-63, found `{text}`");
+            let label = format!("Jump destination must be in the range of 0-15, found `{text}`");
 
             Diagnostic::error_with_span(label, span)
         }
