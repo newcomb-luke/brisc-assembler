@@ -187,6 +187,7 @@ impl<'a> Lexer<'a> {
         self.input.chars().skip(self.current_index).next()
     }
 
+    #[allow(dead_code)]
     fn next_char(&mut self) -> Option<char> {
         let c = self.input.chars().skip(self.current_index).next();
 

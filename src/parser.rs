@@ -1,26 +1,19 @@
 use std::{collections::HashMap, iter::Peekable, slice::Iter};
 
 use crate::{
+    ast::{Instruction, Item, Opcode, Operand, Register},
     instructions::{rules::*, OperandType},
     lexer::{Token, TokenType},
     sources::SourceManager,
-    Instruction, LabelId, LabelManager, Opcode, Operand, Register,
+    LabelManager,
 };
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Item {
-    Label(LabelId),
-    Instruction(Instruction),
-}
 
 pub enum ParseError {
     UnexpectedToken(TokenType, Token),
     MissingToken(TokenType),
-    ExpectedInstructionOrLabel(Token),
     InvalidInstruction(Token),
     ExpectedInstructionBeforeLabel(Token),
     DuplicateLabel(Token),
-    ExpectedInstructionOrNewline(Token),
     ExpectedInstruction(Token),
     ExpectedNoOperands(Token),
     ExpectedOperandFoundEOF(Token),
@@ -30,7 +23,6 @@ pub enum ParseError {
 }
 
 pub(crate) struct Parser<'a, 'b, 'c> {
-    tokens: &'a Vec<Token>,
     tokens_iter: Peekable<Iter<'a, Token>>,
     source_manager: &'b SourceManager<'c>,
     parse_rules: HashMap<Opcode, &'static [&'static [OperandType]]>,
@@ -59,7 +51,6 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         parse_rules.insert(Opcode::J, J_RULES);
 
         Self {
-            tokens,
             tokens_iter: tokens.iter().peekable(),
             source_manager,
             parse_rules,
@@ -84,6 +75,11 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         if let Some(&&next_token) = self.tokens_iter.peek() {
             let mut should_parse_instruction = true;
 
+            if next_token.tt == TokenType::Newline {
+                self.tokens_iter.next();
+                return Ok(Vec::new());
+            }
+
             if next_token.tt == TokenType::Label {
                 if self.just_saw_label {
                     return Err(ParseError::ExpectedInstructionBeforeLabel(next_token));
@@ -94,10 +90,22 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 let label_text_with_colon = self.source_manager.get_span(next_token.span).unwrap();
                 let label_text = &label_text_with_colon[..label_text_with_colon.len() - 1];
 
-                if let Ok(label_id) = self.label_manager.insert_unique(label_text) {
+                let label_id = self.label_manager.get_id_of(label_text);
+
+                if label_id.is_some() && self.label_manager.get_span_of(label_id.unwrap()).is_some() {
+                    return Err(ParseError::DuplicateLabel(next_token));
+                } else if let Some(label_id) = self.label_manager.get_id_of(label_text) {
+                    self.label_manager.set_span_of(label_id, next_token.span).unwrap();
                     items.push(Item::Label(label_id));
                 } else {
-                    return Err(ParseError::DuplicateLabel(next_token));
+                    if let Ok(label_id) = self
+                        .label_manager
+                        .insert_unique(label_text, next_token.span)
+                    {
+                        items.push(Item::Label(label_id));
+                    } else {
+                        return Err(ParseError::DuplicateLabel(next_token));
+                    }
                 }
 
                 // Consume the label token, we don't need it anymore
@@ -124,9 +132,13 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 return Err(ParseError::ExpectedInstruction(next_token));
             }
 
-            let text = self.source_manager.get_span(next_token.span).unwrap();
+            let text = self
+                .source_manager
+                .get_span(next_token.span)
+                .unwrap()
+                .to_lowercase();
 
-            if let Ok(opcode) = Opcode::try_from(text) {
+            if let Ok(opcode) = Opcode::try_from(text.as_str()) {
                 let rules = *self.parse_rules.get(&opcode).unwrap();
 
                 if rules.is_empty() {
@@ -179,21 +191,31 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         if let Some(&next_token) = self.tokens_iter.next() {
             if expected_token_types.iter().any(|&t| t == next_token.tt) {
                 // The token was the one that was expected
-                let text = self.source_manager.get_span(next_token.span).unwrap();
+                let text = self
+                    .source_manager
+                    .get_span(next_token.span)
+                    .unwrap()
+                    .to_lowercase();
 
                 if next_token.tt == TokenType::Identifier {
                     if operand_rule.contains(&OperandType::Register) {
                         // See if it is is a register
-                        if let Ok(register) = Register::try_from(text) {
-                            return Ok(Operand::Register(register));
+                        if let Ok(register) = Register::try_from(text.as_str()) {
+                            return Ok(Operand::Register {
+                                value: register,
+                                span: next_token.span,
+                            });
                         }
                     }
 
                     if operand_rule.contains(&OperandType::Label) {
                         // It's a label, we can't do much about checking it's validity until later
-                        let label_id = self.label_manager.get_or_insert_reference(text);
+                        let label_id = self.label_manager.get_or_insert_reference(text.as_str());
 
-                        Ok(Operand::Label(label_id))
+                        Ok(Operand::Label {
+                            value: label_id,
+                            span: next_token.span,
+                        })
                     } else if operand_rule.contains(&OperandType::Register) {
                         // It should have been a register, it just wasn't a valid one
                         Err(ParseError::ExpectedRegister(next_token))
@@ -201,8 +223,11 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                         panic!("Internal Assembler Error");
                     }
                 } else if next_token.tt == TokenType::Integer {
-                    if let Ok(parsed_value) = text.parse::<i16>() {
-                        Ok(Operand::Integer(parsed_value))
+                    if let Ok(parsed_value) = text.parse::<i8>() {
+                        Ok(Operand::Integer {
+                            value: parsed_value,
+                            span: next_token.span,
+                        })
                     } else {
                         Err(ParseError::IntegerOutOfRange(next_token))
                     }
